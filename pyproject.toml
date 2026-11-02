@@ -14,6 +14,11 @@ dependencies = [
     "scikit-learn",
     "matplotlib",
     "reportlab",
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "streamlit",
+    "httpx",
 ]
 
 [project.optional-dependencies]
@@ -24,5 +29,5 @@ tracking = ["mlflow"]
 include = ["src*"]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+pythonpath = [".", "tests"]
 testpaths = ["tests"]

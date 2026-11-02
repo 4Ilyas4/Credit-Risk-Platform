@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from typing import Callable
 
 import numpy as np
@@ -27,14 +28,18 @@ def to_jsonable(obj):
         return to_jsonable(obj.to_dict("records"))
     if isinstance(obj, np.ndarray):
         return to_jsonable(obj.tolist())
+    if obj is pd.NA or obj is pd.NaT:
+        return None
     if isinstance(obj, np.generic):
         obj = obj.item()
     if isinstance(obj, float):
         return obj if math.isfinite(obj) else None
     if isinstance(obj, (pd.Timestamp, pd.Period)):
         return str(obj)
-    if obj is pd.NaT:
-        return None
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, bytes):
+        return obj.decode("utf-8", errors="replace")
     return obj
 
 

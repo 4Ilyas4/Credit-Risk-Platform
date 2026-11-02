@@ -1,0 +1,17 @@
+version: "3.9"
+services:
+  api:
+    build: .
+    ports: ["8000:8000"]
+    volumes: ["./storage:/app/storage", "./reports:/app/reports"]
+    environment:
+      STORAGE_DIR: /app/storage
+  frontend:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes: ["./:/app"]
+    ports: ["8501:8501"]
+    environment:
+      API_URL: http://api:8000
+    command: sh -c "pip install -q streamlit requests pandas && streamlit run frontend/app.py --server.address 0.0.0.0"
+    depends_on: [api]
