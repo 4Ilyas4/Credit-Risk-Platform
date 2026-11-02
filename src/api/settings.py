@@ -28,6 +28,7 @@ class Settings:
     max_features: int = 200
     max_concurrent_runs: int = 2
     max_cells: int = 100_000_000  # строки * столбцы: защита от сжатых файлов, которые раздуваются в памяти
+    dataset_ttl_hours: int = 24  # загруженные данные хранятся не дольше этого срока (TTL)
 
     @property
     def max_upload_bytes(self) -> int:
@@ -42,4 +43,5 @@ class Settings:
             max_columns=_positive_int("VALIDATOR_MAX_COLUMNS", 500),
             max_features=_positive_int("VALIDATOR_MAX_FEATURES", 200),
             max_concurrent_runs=_positive_int("VALIDATOR_MAX_CONCURRENT_RUNS", 2),
-            max_cells=_positive_int("VALIDATOR_MAX_CELLS", 100_000_000))
+            max_cells=_positive_int("VALIDATOR_MAX_CELLS", 100_000_000),
+            dataset_ttl_hours=_positive_int("VALIDATOR_DATASET_TTL_HOURS", 24))

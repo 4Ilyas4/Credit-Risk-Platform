@@ -67,7 +67,7 @@ def test_demo_to_report(api_url, monkeypatch):
     run_id = at.session_state["run_id"]
     d = requests.get(f"{api_url}/validation-runs/{run_id}", timeout=60).json()
     assert d["status"] == "completed", d.get("error")
-    assert 300 < d["summary"]["n_used"] < 1500, d["summary"].get("n_used")
+    assert 300 < d["summary"]["n_used"] < 2500, d["summary"].get("n_used")
 
     # 5. переключение обратно на «Данные» не должно падать (была баг: очистка ключей виджетов)
     at.session_state["view"] = "Данные"

@@ -20,7 +20,7 @@ FILENAME = "demo_scoring_results.csv"
 FORMAT = "csv"
 
 
-def demo_frame(n: int = 3000, seed: int = SEED) -> pd.DataFrame:
+def demo_frame(n: int = 5000, seed: int = SEED) -> pd.DataFrame:
     """Синтетические результаты скоринга.
 
     Скор — сигмоид от скрытого фактора x с лёгким завышением риска (p * 1.12,
@@ -32,7 +32,12 @@ def demo_frame(n: int = 3000, seed: int = SEED) -> pd.DataFrame:
     p = 1 / (1 + np.exp(-(1.2 * x - 1.386)))  # ~20% дефолтов
     y = (rng.random(n) < p).astype(int)
     score = np.clip(p * 1.12, 0.001, 0.999)  # слегка завышает риск
-    dates = pd.date_range("2020-01-01", periods=n, freq="3h")
+    # ~4 года при 12ч шаге: у поздних 30% (проверяемый период по референсу по умолчанию)
+    # достаточно кварталов для backtesting и проверки зрелости target.
+    dates = pd.date_range("2017-01-01", periods=n, freq="12h")
+    # группа из 12 сегментов (регион × подсегмент): групповой bootstrap требует >= 10 групп
+    groups = [f"{r}-{t}" for r in ("ЦФО", "Урал", "Сибирь", "Юг")
+              for t in ("Классика", "Premium", "Subprime")]
     df = pd.DataFrame({
         "loan_id": np.arange(n),
         "issue_d": dates.strftime("%Y-%m-%d"),
@@ -40,7 +45,7 @@ def demo_frame(n: int = 3000, seed: int = SEED) -> pd.DataFrame:
         "income": np.round(rng.normal(50, 10, n) + 3 * y, 1),
         "age": np.round(rng.normal(40, 8, n), 1),
         "dti": np.round(rng.normal(18, 7, n), 2),
-        "segment": rng.choice(["Стандарт", "Prime", "Subprime"], n, p=[0.5, 0.35, 0.15]),
+        "segment": rng.choice(groups, n),
     })
     return df
 

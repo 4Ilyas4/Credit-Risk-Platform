@@ -9,6 +9,7 @@ import json
 import os
 import re
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -112,6 +113,57 @@ class Storage:
         if fmt not in ("html", "pdf", "json"):
             raise NotFound(fmt)
         return self._path("reports", ident, f".{fmt}")
+
+    @staticmethod
+    def _parse_iso(value: str | None) -> float | None:
+        """Дата/время из created_at в timestamp (UTC). Нечитаемое -> None."""
+        if not value:
+            return None
+        s = value if value.endswith(("Z", "+00:00", "+0000")) else value + "Z"
+        try:
+            return datetime.fromisoformat(s.replace("Z", "+00:00").replace("+0000", "+00:00")).timestamp()
+        except ValueError:
+            return None
+
+    def cleanup_old(self, max_age_hours: float = 24.0) -> int:
+        """TTL-очистка: удаляет наборы данных старше max_age_hours и их запуски и отчёты.
+
+        Цель: загруженные пользователем данные не хранятся бессрочно. Вызывается при
+        старте приложения (и может вызываться периодически). Возвращает число удалённых наборов.
+        """
+        cutoff = time.time() - max_age_hours * 3600
+        ds_dir = self.root / "datasets"
+        if not ds_dir.exists():
+            return 0
+        removed = 0
+        for json_path in ds_dir.glob("*.json"):
+            ident = json_path.stem
+            try:
+                ts = self._parse_iso(json.loads(json_path.read_text(encoding="utf-8")).get("created_at"))
+            except Exception:
+                ts = None
+            if ts is None or ts >= cutoff:
+                continue
+            # связанные запуски (записи ссылаются на dataset_id)
+            run_ids = []
+            runs_dir = self.root / "runs"
+            if runs_dir.exists():
+                for rp in runs_dir.glob("*.json"):
+                    try:
+                        rec = json.loads(rp.read_text(encoding="utf-8"))
+                        if rec.get("dataset_id") == ident and rec.get("run_id"):
+                            run_ids.append(rec["run_id"])
+                    except Exception:
+                        pass
+            for p in (json_path, ds_dir / f"{ident}.parquet"):
+                p.unlink(missing_ok=True)
+            for rid in run_ids:
+                for suffix in (".json", ".result.json"):
+                    (runs_dir / f"{rid}{suffix}").unlink(missing_ok=True)
+                for fmt in ("html", "pdf", "json"):
+                    (self.root / "reports" / f"{rid}.{fmt}").unlink(missing_ok=True)
+            removed += 1
+        return removed
 
     def fail_stale_runs(self) -> int:
         """После перезапуска сервера запуски в статусе queued/running уже не выполняются: помечаем failed."""

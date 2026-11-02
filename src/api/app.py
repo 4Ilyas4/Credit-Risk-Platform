@@ -42,6 +42,9 @@ def create_app(settings: Settings | None = None, inline_jobs: bool = False) -> F
         n = storage.fail_stale_runs()
         if n:
             log.warning("Помечено прерванных запусков: %d", n)
+        removed = storage.cleanup_old(settings.dataset_ttl_hours)
+        if removed:
+            log.info("TTL-очистка: удалено устаревших наборов данных: %d", removed)
         yield
         runner.shutdown()
 

@@ -5,7 +5,7 @@ services:
     ports: ["8000:8000"]
     volumes: ["./storage:/app/storage", "./reports:/app/reports"]
     environment:
-      STORAGE_DIR: /app/storage
+      VALIDATOR_STORAGE_DIR: /app/storage
   frontend:
     image: python:3.11-slim
     working_dir: /app
