@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 
 from src.validation.performance.ranking_metrics import require_both_classes
-from src.validation.result import MetricNotComputable, MetricResult, OK, WARNING, safe_result
+from src.validation.result import MetricNotComputable, MetricResult, NOT_COMPUTABLE, OK, WARNING, safe_result
 
 
 def brier_score(y: np.ndarray, s: np.ndarray) -> float:
@@ -50,7 +50,21 @@ def balanced_accuracy(c: dict) -> float:
     return (tpr + tnr) / 2
 
 
-def probability_results(y: np.ndarray, s: np.ndarray) -> list[MetricResult]:
+def probability_results(y: np.ndarray, s: np.ndarray, score_kind: str = "probability") -> list[MetricResult]:
+    """Brier и Log Loss. Для рангового скора (score_kind='score') не определены:
+    они требуют вероятностной шкалы, а не просто ранжирования."""
+    if score_kind != "probability":
+        note = ("Скор — ранговый балл, а не вероятность: его значения нельзя интерпретировать "
+                "как вероятность дефолта, поэтому квадратичная и логарифмическая ошибки не определены. "
+                "Для вероятностной интерпретации преобразуйте балл в вероятность (например, калибровкой "
+                "на исторических данных) или укажите score_kind='probability'.")
+        lim = "Ранговые метрики (AUC, Gini, KS) при этом считаются: они зависят только от порядка."
+        return [MetricResult("Brier Score", None, NOT_COMPUTABLE,
+                             "Средний квадрат разницы между предсказанной вероятностью и исходом.",
+                             note, lim),
+                MetricResult("Log Loss", None, NOT_COMPUTABLE,
+                             "Среднее отрицательное логарифмическое правдоподобие.",
+                             note, lim)]
     base = float(np.mean(y))
     prior_brier = base * (1 - base)
     prior_ll = log_loss(y, np.full(len(y), base))
@@ -73,16 +87,29 @@ def probability_results(y: np.ndarray, s: np.ndarray) -> list[MetricResult]:
     ]
 
 
-def threshold_results(y: np.ndarray, s: np.ndarray, threshold: float | None = None) -> list[MetricResult]:
-    """Метрики по порогу. По умолчанию порог = доля дефолтов в выборке (скор выше среднего риска)."""
+def threshold_results(y: np.ndarray, s: np.ndarray, threshold: float | None = None,
+                      score_kind: str = "probability") -> list[MetricResult]:
+    """Метрики по порогу. По умолчанию порог = доля дефолтов в выборке (скор выше среднего риска).
+
+    Для рангового скора (score_kind='score') порог по умолчанию — квантиль скора,
+    соответствующий доле дефолтов: в «дефолт» попадает верхняя доля, равная доле дефолтов.
+    """
     require = True
     try:
         require_both_classes(y)
     except MetricNotComputable as exc:
         require = False
         msg = str(exc)
-    used = float(np.mean(y)) if threshold is None else float(threshold)
-    src = "по умолчанию равен доле дефолтов в выборке" if threshold is None else "задан пользователем"
+    if threshold is None:
+        if score_kind == "probability":
+            used = float(np.mean(y))
+            src = "по умолчанию равен доле дефолтов в выборке"
+        else:
+            used = float(np.quantile(s, 1 - np.mean(y)))
+            src = "по умолчанию равен квантилю скора, соответствующему доле дефолтов"
+    else:
+        used = float(threshold)
+        src = "задан пользователем"
     limits = (f"Порог {used:.3f} ({src}). Результат сильно зависит от порога, "
               "а бизнес-порог решения здесь неизвестен.")
     explain_suffix = f" Порог {used:.3f}."

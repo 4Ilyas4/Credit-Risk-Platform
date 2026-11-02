@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from src.validation.result import MetricNotComputable, MetricResult, OK, WARNING, safe_result
+from src.validation.result import MetricNotComputable, MetricResult, NOT_COMPUTABLE, OK, WARNING, safe_result
 
 
 def _bin_ids(s: np.ndarray, n_bins: int, strategy: str) -> np.ndarray:
@@ -45,7 +45,24 @@ def calibration_in_the_large(y: np.ndarray, s: np.ndarray) -> dict[str, float]:
             "ratio": mean_pred / mean_obs if mean_obs > 0 else float("nan")}
 
 
-def calibration_results(y: np.ndarray, s: np.ndarray, n_bins: int = 10) -> list[MetricResult]:
+def calibration_results(y: np.ndarray, s: np.ndarray, n_bins: int = 10,
+                        score_kind: str = "probability") -> list[MetricResult]:
+    """Калибровка. Для рангового скора (score_kind='score') не определена: она требует
+    вероятностной шкалы, а значения рангового балла нельзя интерпретировать как вероятности."""
+    if score_kind != "probability":
+        note = ("Скор — ранговый балл, а не вероятность: его значения нельзя интерпретировать "
+                "как вероятность дефолта, поэтому калибровка не определена. Для проверки калибровки "
+                "преобразуйте балл в вероятность (например, калибровкой на исторических данных).")
+        lim = "Ранжирование при этом проверено метриками AUC/Gini/KS."
+        return [MetricResult("Calibration in the large", None, NOT_COMPUTABLE,
+                             "Разница между средним прогнозом и фактической долей дефолтов.",
+                             note, lim),
+                MetricResult("ECE", None, NOT_COMPUTABLE,
+                             "Среднее взвешенное расхождение между прогнозом и фактом по корзинам.",
+                             note, lim),
+                MetricResult("Calibration Curve", None, NOT_COMPUTABLE,
+                             "Средний прогноз и фактическая доля дефолтов по корзинам.",
+                             note, lim)]
     limits_bins = (f"Зависит от числа корзин ({n_bins}) и способа разбиения. "
                    "В корзинах с малым числом наблюдений оценка шумная.")
     out: list[MetricResult] = []
@@ -63,13 +80,13 @@ def calibration_results(y: np.ndarray, s: np.ndarray, n_bins: int = 10) -> list[
         "Calibration in the large", lambda: citl["difference"],
         "Разница между средним прогнозом и фактической долей дефолтов.", interp_citl,
         "Не показывает, где именно прогноз ошибается по шкале риска. Порог предупреждения: |разница| > 0.02 "
-        "и больше 10% от фактической доли - рабочий ориентир.", citl))
+        "и больше 10% от фактической доли — рабочий ориентир из практики калибровки кредитных моделей.", citl))
     ece = lambda: expected_calibration_error(y, s, n_bins, "uniform")  # noqa: E731
     out.append(safe_result(
         "ECE", ece, "Среднее взвешенное расхождение между прогнозом и фактом по корзинам вероятности.",
         lambda v: (f"ECE={v:.4f}: в среднем прогноз отличается от факта на {v * 100:.1f} п.п.",
                    WARNING if v > 0.05 else OK),
-        limits_bins + " Порог 0.05 - рабочий ориентир."))
+        limits_bins + " Порог 0.05 — рабочий ориентир из практики калибровки кредитных моделей."))
     try:
         curve = calibration_curve(y, s, n_bins, "quantile")
         out.append(MetricResult(

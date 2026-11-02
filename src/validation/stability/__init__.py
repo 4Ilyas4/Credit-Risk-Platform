@@ -10,8 +10,8 @@ from src.validation.stability.psi import numeric_psi, psi_level
 from src.validation.stability.temporal_backtesting import backtest_by_period, trend_summary
 
 SECTION = "Stability"
-PSI_LIMIT = ("Ориентиры PSI (0.1 / 0.25) общепринятые, но условные. PSI зависит от числа корзин "
-             "и размера выборки; на малых выборках даёт шум.")
+PSI_LIMIT = ("Ориентиры PSI (0.1 / 0.25) — общепринятые в мониторинге кредитных моделей, но условные. "
+             "PSI зависит от числа корзин и размера выборки; на малых выборках даёт шум.")
 
 
 def score_psi_result(s_ref: np.ndarray, s_cur: np.ndarray, label: str = "") -> MetricResult:
@@ -54,7 +54,8 @@ def backtest_results(y: np.ndarray, s: np.ndarray, dates: pd.Series, freq: str =
     except MetricNotComputable as exc:
         return [MetricResult("Backtesting по периодам", None, NOT_COMPUTABLE, "Метрики по временным периодам.", str(exc), "")]
     lim = ("Периоды с малым числом дефолтов или недефолтов исключены из AUC/Gini/KS. Последние периоды могут быть "
-           "незрелыми (дефолты ещё не наступили), тогда падение качества кажущееся.")
+           "незрелыми (дефолты ещё не наступили), тогда падение качества кажущееся. "
+           "Пороги (разброс AUC > 0.05, падение > 0.03) — рабочие ориентиры из практики мониторинга моделей.")
     out = [MetricResult("Backtesting по периодам", None, OK,
                         "Метрики качества по календарным периодам.", f"Периодов: {len(table)}, достаточных: "
                         f"{int(table['sufficient'].sum())}.", lim, {"table": table})]

@@ -169,3 +169,32 @@ def test_numbers_in_date_like_column_not_suggested_as_date(client):
 
 def test_health(client):
     assert client.get("/health").json()["status"] == "ok"
+
+
+# ---------- вопросы по неоднозначному маппингу (Шаг 6) ----------
+
+def test_upload_asks_score_kind_for_out_of_range_score(client):
+    df = pd.DataFrame({"default": [0, 1] * 5, "score": np.linspace(5, 90, 10)})
+    body = upload(client, csv_bytes(df)).json()
+    qs = {q["field"] for q in body["mapping_questions"]}
+    assert "score_kind" in qs
+    q = next(q for q in body["mapping_questions"] if q["field"] == "score_kind")
+    assert "вне [0,1]" in q["question"]
+
+
+def test_upload_asks_default_value_for_text_status(client):
+    df = pd.DataFrame({"issue_d": ["2015-01-01"] * 10,
+                       "status": ["Fully Paid", "Charged Off"] * 5,
+                       "score": np.linspace(0.1, 0.9, 10)})
+    body = upload(client, csv_bytes(df)).json()
+    qs = {q["field"] for q in body["mapping_questions"]}
+    assert "default_value" in qs
+    q = next(q for q in body["mapping_questions"] if q["field"] == "default_value")
+    assert "Charged Off" in q["question"]
+
+
+def test_upload_binary_target_no_default_value_question(client, frame):
+    body = upload(client, csv_bytes(frame)).json()
+    qs = {q["field"] for q in body["mapping_questions"]}
+    assert "default_value" not in qs
+    assert "score_kind" not in qs  # скор в [0,1]

@@ -27,8 +27,13 @@ class Period(Strict):
 
 class ColumnMapping(Strict):
     """Сопоставление столбцов пользователя с переменными валидатора."""
-    y_true: str = Field(min_length=1, description="Фактический исход, 0/1")
-    y_score: str = Field(min_length=1, description="Предсказанная вероятность дефолта, [0, 1]")
+    y_true: str = Field(min_length=1, description="Фактический исход: 0/1 или столбец со статусом кредита")
+    y_score: str = Field(min_length=1, description="Предсказанный скор: вероятность или ранговый балл")
+    score_kind: Literal["probability", "score"] = Field("probability", description="Тип скора: вероятность или ранговый балл")
+    higher_is_riskier: bool = Field(True, description="Больше значение = выше риск. Если False, скор инвертируется")
+    default_value: str | int | float | None = Field(
+        None, description="Значение в y_true, которое считается дефолтом (1). "
+                          "Если не задано, y_true должен быть числовым 0/1")
     date: str | None = Field(None, description="Дата выдачи/наблюдения (нужна для периодов и backtesting)")
     group: str | None = Field(None, description="Группа для группового bootstrap и ошибок по сегментам")
     features: list[str] = Field(default_factory=list, max_length=500,
@@ -82,6 +87,15 @@ class SuggestedMapping(BaseModel):
     group: str | None = None
 
 
+class MappingQuestion(BaseModel):
+    """Вопрос пользователю по неоднозначному сопоставлению столбцов.
+
+    field — какой параметр маппинга нужно уточнить.
+    """
+    field: Literal["score_kind", "default_value"]
+    question: str
+
+
 class DatasetInfo(BaseModel):
     dataset_id: str
     filename: str
@@ -94,6 +108,8 @@ class DatasetInfo(BaseModel):
     preview: list[dict[str, Any]]
     warnings: list[str]
     suggested_mapping: SuggestedMapping
+    mapping_questions: list[MappingQuestion] = Field(
+        default_factory=list, description="Вопросы по неоднозначным столбцам: тип скора, значение дефолта")
     parse_seconds: float
     upload_seconds: float | None = None
     created_at: str

@@ -13,6 +13,25 @@ OK = "ok"
 WARNING = "warning"
 NOT_COMPUTABLE = "not_computable"
 
+# Три вопроса, на которые отвечает отчёт: качество, стабильность, надёжность.
+PILLAR_QUALITY = "quality"
+PILLAR_STABILITY = "stability"
+PILLAR_RELIABILITY = "reliability"
+
+# Какая секция отчёта к какому вопросу относится.
+SECTION_PILLAR: dict[str, str] = {
+    "Model Performance": PILLAR_QUALITY,
+    "Calibration": PILLAR_QUALITY,
+    "Data Quality": PILLAR_QUALITY,
+    "Data Informativeness": PILLAR_QUALITY,
+    "Error Analysis": PILLAR_QUALITY,
+    "Stability": PILLAR_STABILITY,
+    "Reliability": PILLAR_RELIABILITY,
+}
+
+# Версия формата JSON-отчёта. Меняется при несовместимых изменениях структуры.
+SCHEMA_VERSION = "1.0"
+
 
 class MetricNotComputable(ValueError):
     """Метрику нельзя корректно рассчитать на этих данных (например, в выборке один класс)."""
@@ -49,6 +68,8 @@ class MetricResult:
 
     value=None при status="not_computable" означает, что метрика не определена.
     value=None при status="ok" означает табличный результат: данные лежат в details.
+    pillar — к какому из трёх вопросов относится метрика (quality/stability/reliability).
+    Заполняется автоматически в ValidationReport.add по имени секции.
     """
     name: str
     value: float | None
@@ -57,12 +78,13 @@ class MetricResult:
     interpretation: str
     limitations: str
     details: dict = field(default_factory=dict)
+    pillar: str | None = None
 
     def to_dict(self) -> dict:
         return to_jsonable({
             "name": self.name, "value": self.value, "status": self.status,
             "explanation": self.explanation, "interpretation": self.interpretation,
-            "limitations": self.limitations, "details": self.details})
+            "limitations": self.limitations, "details": self.details, "pillar": self.pillar})
 
 
 def safe_result(name: str, compute: Callable[[], float], explanation: str,
@@ -92,6 +114,10 @@ class ValidationReport:
 
     def add(self, section: str, results: MetricResult | list[MetricResult]) -> None:
         items = results if isinstance(results, list) else [results]
+        pillar = SECTION_PILLAR.get(section)
+        for r in items:
+            if pillar and r.pillar is None:
+                r.pillar = pillar
         self.sections.setdefault(section, []).extend(items)
         for r in items:
             if r.status == WARNING:
@@ -114,5 +140,6 @@ class ValidationReport:
 
     def to_dict(self) -> dict:
         return to_jsonable({
+            "schema_version": SCHEMA_VERSION,
             "meta": self.meta, "warnings": self.warnings,
             "sections": {s: [r.to_dict() for r in items] for s, items in self.sections.items()}})

@@ -1,0 +1,62 @@
+[
+  {
+    "label": "full",
+    "n": 30000,
+    "default_rate": 0.2212,
+    "auc": 0.7213937096003713,
+    "ci_width_auc": 0.013911088383941617,
+    "cards": {
+      "quality": {
+        "status": "warning",
+        "n_metrics": 29,
+        "n_warning": 6,
+        "n_not_computable": 0
+      },
+      "stability": {
+        "status": "not_computable",
+        "n_metrics": 0,
+        "n_warning": 0,
+        "n_not_computable": 0
+      },
+      "reliability": {
+        "status": "ok",
+        "n_metrics": 5,
+        "n_warning": 0,
+        "n_not_computable": 0
+      }
+    },
+    "attention": 6,
+    "not_checked": 2,
+    "sufficiency": "Строк 30000: объёма достаточно для базовых проверок."
+  },
+  {
+    "label": "small",
+    "n": 300,
+    "default_rate": 0.23333333333333334,
+    "auc": 0.7244099378881987,
+    "ci_width_auc": 0.16087111801242238,
+    "cards": {
+      "quality": {
+        "status": "warning",
+        "n_metrics": 29,
+        "n_warning": 6,
+        "n_not_computable": 0
+      },
+      "stability": {
+        "status": "not_computable",
+        "n_metrics": 0,
+        "n_warning": 0,
+        "n_not_computable": 0
+      },
+      "reliability": {
+        "status": "warning",
+        "n_metrics": 5,
+        "n_warning": 5,
+        "n_not_computable": 0
+      }
+    },
+    "attention": 11,
+    "not_checked": 2,
+    "sufficiency": "Строк 300 (меньше 1000): статистические оценки будут неустойчивы."
+  }
+]

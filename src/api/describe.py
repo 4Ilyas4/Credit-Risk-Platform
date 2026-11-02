@@ -6,7 +6,7 @@ import warnings
 
 import pandas as pd
 
-from src.api.schemas import ColumnInfo, SuggestedMapping
+from src.api.schemas import ColumnInfo, MappingQuestion, SuggestedMapping
 
 TARGET_NAMES = ("y_true", "target", "default", "label", "bad", "outcome", "actual", "flag_default")
 SCORE_NAMES = ("y_score", "score", "prob", "proba", "probability", "pd", "y_pred", "predicted", "prediction")
@@ -67,6 +67,55 @@ def suggest_mapping(columns: list[ColumnInfo]) -> SuggestedMapping:
         date = next((c.name for c in columns if c.kind == "datetime"), None)
     group = pick(GROUP_NAMES, lambda c: c.kind == "text" and 2 <= (c.n_unique or 0) <= 1000)
     return SuggestedMapping(y_true=y_true, y_score=y_score, date=date, group=group)
+
+
+def _is_binary_target(s: pd.Series) -> bool:
+    return (pd.api.types.is_numeric_dtype(s)
+            and set(pd.unique(s.dropna())) <= {0, 1, 0.0, 1.0, True, False})
+
+
+def _status_markers(text: str) -> bool:
+    return any(k in text for k in ("default", "charged", "paid", "current", "off", "late"))
+
+
+def mapping_questions(df: pd.DataFrame, suggested: SuggestedMapping) -> list[MappingQuestion]:
+    """Вопросы по неоднозначным столбцам, чтобы suggest_mapping работал на сервере.
+
+    Спрашиваем только тогда, когда без ответа нельзя запустить проверку:
+    - скор вне [0,1] — вероятность это или ранговый балл (score_kind)?
+    - y_true не 0/1 — какое значение считать дефолтом (default_value)?
+    Для второго вопроса ищем и кандидата-столбец со статусами кредита, даже если
+    suggest_mapping его не предложил (текстовые столбцы он в y_true не допускает).
+    """
+    out: list[MappingQuestion] = []
+    used = {v for v in (suggested.y_score, suggested.y_true, suggested.date, suggested.group) if v}
+    sc = suggested.y_score
+    if sc and sc in df.columns and pd.api.types.is_numeric_dtype(df[sc]):
+        vals = df[sc].dropna()
+        if len(vals) and (float(vals.max()) > 1 or float(vals.min()) < 0):
+            out.append(MappingQuestion(field="score_kind",
+                question=f"Скор {sc!r} вне [0,1] (диапазон [{float(vals.min()):.4g}, "
+                         f"{float(vals.max()):.4g}]): это вероятность или ранговый балл "
+                         f"(например, ставка или grade)?"))
+    yt = suggested.y_true
+    if yt and yt in df.columns and not _is_binary_target(df[yt]):
+        uniq = sorted(map(str, pd.unique(df[yt].dropna())))[:5]
+        out.append(MappingQuestion(field="default_value",
+            question=f"Столбец {yt!r} не является 0/1 (значения: {uniq}). "
+                     f"Какое значение считать дефолтом?"))
+    elif yt is None:
+        # ищем текстовый столбец со статусами кредита — без него нельзя собрать y_true
+        for c in df.columns:
+            if c in used or not (pd.api.types.is_object_dtype(df[c]) or pd.api.types.is_string_dtype(df[c])):
+                continue
+            vals = pd.unique(df[c].dropna())
+            if 2 <= len(vals) <= 10 and _status_markers(" ".join(map(str, vals)).lower()):
+                uniq = sorted(map(str, vals))[:5]
+                out.append(MappingQuestion(field="default_value",
+                    question=f"Столбец {c!r} похож на статус кредита (значения: {uniq}). "
+                             f"Какое значение считать дефолтом?"))
+                break
+    return out
 
 
 def structure_warnings(df: pd.DataFrame, columns: list[ColumnInfo]) -> list[str]:

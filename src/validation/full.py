@@ -30,17 +30,22 @@ def _feature_frame(X: pd.DataFrame, y_true, y_score, dates) -> pd.DataFrame:
 
 def run_full_validation(y_true, y_score, X: pd.DataFrame | None = None, dates=None, groups=None,
                         reference_data: pd.DataFrame | None = None, threshold: float | None = None,
-                        n_boot: int | None = None, seed: int = 42, model=None) -> ValidationReport:
+                        n_boot: int | None = None, seed: int = 42, model=None,
+                        score_kind: str = "probability", higher_is_riskier: bool = True) -> ValidationReport:
     """Объединяет все доступные проверки.
 
     Обязательны y_true и y_score. Без X не выполняются проверки данных и информативности признаков,
     без dates - backtesting, без reference_data - PSI, без groups - групповые проверки, без model - SHAP.
     Список пропущенных проверок лежит в report.meta["skipped_checks"].
     Базовую модель на данных пользователя пакет не обучает и не утверждает, что восстановил его модель.
+
+    score_kind: "probability" или "score" (ранговый балл). Для рангового балла Brier, LogLoss
+    и калибровка получают not_computable. higher_is_riskier=False инвертирует скор.
     """
     predictions = evaluate_predictions(y_true, y_score, X=X, dates=dates, groups=groups,
                                        reference_data=reference_data, threshold=threshold,
-                                       n_boot=n_boot, seed=seed)
+                                       n_boot=n_boot, seed=seed,
+                                       score_kind=score_kind, higher_is_riskier=higher_is_riskier)
     skipped = [predictions.meta.pop("skipped_checks")] if "skipped_checks" in predictions.meta else []
     report = ValidationReport()
     if X is not None:

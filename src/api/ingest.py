@@ -10,7 +10,7 @@ from pathlib import Path
 import pandas as pd
 import pyarrow.parquet as pq
 
-from src.api.describe import describe_columns, structure_warnings, suggest_mapping
+from src.api.describe import describe_columns, mapping_questions, structure_warnings, suggest_mapping
 from src.api.errors import FileTooLarge, InvalidDataset, UnsupportedFile
 from src.api.settings import Settings
 
@@ -109,18 +109,27 @@ def read_table(path: Path, fmt: str, settings: Settings) -> tuple[pd.DataFrame, 
     return df, notes
 
 
+def dataset_meta(df: pd.DataFrame, filename: str, fmt: str, size_bytes: int, sha: str,
+                 notes: list[str], settings: Settings) -> dict:
+    """Метаданные загруженной таблицы для ответа `POST /datasets`. Общая для файла и демо."""
+    columns = describe_columns(df)
+    head = df.head(10)
+    preview = head.astype(object).where(head.notna(), None).to_dict("records")
+    suggested = suggest_mapping(columns)
+    return {"filename": display_name(filename), "format": fmt, "size_bytes": size_bytes,
+            "sha256": sha, "n_rows": int(len(df)), "n_columns": int(df.shape[1]),
+            "columns": [c.model_dump() for c in columns], "preview": preview,
+            "warnings": notes + structure_warnings(df, columns),
+            "suggested_mapping": suggested.model_dump(),
+            "mapping_questions": [q.model_dump() for q in mapping_questions(df, suggested)]}
+
+
 def inspect_upload(path: Path, filename: str, settings: Settings) -> tuple[pd.DataFrame, dict]:
     """Полная проверка загруженного файла. Возвращает таблицу и метаданные для ответа API."""
     t0 = time.perf_counter()
     fmt = detect_format(path, filename)
     df, notes = read_table(path, fmt, settings)
-    columns = describe_columns(df)
-    head = df.head(10)
-    preview = head.astype(object).where(head.notna(), None).to_dict("records")
-    meta = {"filename": display_name(filename), "format": fmt, "size_bytes": path.stat().st_size,
-            "sha256": sha256_file(path), "n_rows": int(len(df)), "n_columns": int(df.shape[1]),
-            "columns": [c.model_dump() for c in columns], "preview": preview,
-            "warnings": notes + structure_warnings(df, columns),
-            "suggested_mapping": suggest_mapping(columns).model_dump(),
-            "parse_seconds": round(time.perf_counter() - t0, 3)}
+    meta = dataset_meta(df, display_name(filename), fmt, path.stat().st_size,
+                        sha256_file(path), notes, settings)
+    meta["parse_seconds"] = round(time.perf_counter() - t0, 3)
     return df, meta

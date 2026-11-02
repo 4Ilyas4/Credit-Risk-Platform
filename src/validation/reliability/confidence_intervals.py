@@ -9,8 +9,8 @@ from src.validation.reliability.bootstrap import auto_n_boot, bootstrap_metrics,
 from src.validation.result import MetricNotComputable, MetricResult, NOT_COMPUTABLE, OK, WARNING
 
 # Gini не пересчитывается в каждой выборке: Gini = 2*AUC - 1, интервал получается линейным преобразованием.
-BASE_METRICS = {"ROC-AUC": roc_auc, "KS": ks_statistic, "PR-AUC": pr_auc, "Brier Score": brier_score}
-NAMES = ["ROC-AUC", "Gini", "KS", "PR-AUC", "Brier Score"]
+# Brier включается только для вероятностной шкалы: для рангового скора он не определён.
+RANK_METRICS = {"ROC-AUC": roc_auc, "KS": ks_statistic, "PR-AUC": pr_auc}
 
 
 def _gini_from_auc(r: dict) -> dict:
@@ -21,14 +21,19 @@ def _gini_from_auc(r: dict) -> dict:
 
 
 def ci_results(y: np.ndarray, s: np.ndarray, n_boot: int | None = None, alpha: float = 0.05, seed: int = 42,
-               groups: np.ndarray | None = None) -> list[MetricResult]:
+               groups: np.ndarray | None = None, score_kind: str = "probability") -> list[MetricResult]:
     """Bootstrap-интервалы. Без groups - стратифицированный, с groups - по целым группам.
 
     n_boot=None: 500 повторов при ≤ 50 000 строк, иначе 200 (скорость).
+    Для score_kind='score' Brier не включается: ранговый балл не является вероятностью.
     """
     n_boot = auto_n_boot(len(y), n_boot)
     few = minimum_positives_warning(int(y.sum()))
-    raw = bootstrap_metrics(y, s, BASE_METRICS, n_boot, alpha, seed, groups)
+    base_metrics = dict(RANK_METRICS)
+    if score_kind == "probability":
+        base_metrics["Brier Score"] = brier_score
+    names = ["ROC-AUC", "Gini", "KS", "PR-AUC"] + (["Brier Score"] if score_kind == "probability" else [])
+    raw = bootstrap_metrics(y, s, base_metrics, n_boot, alpha, seed, groups)
     raw["Gini"] = _gini_from_auc(raw["ROC-AUC"]) if isinstance(raw.get("ROC-AUC"), dict) else raw["ROC-AUC"]
     method_note = ("Стратифицированный bootstrap предполагает независимость наблюдений. Если кредиты одного "
                    "заёмщика или одного периода зависимы, интервал получится слишком узким. "
@@ -36,9 +41,10 @@ def ci_results(y: np.ndarray, s: np.ndarray, n_boot: int | None = None, alpha: f
                    "Групповой bootstrap учитывает зависимость внутри группы, но требует достаточно групп. ")
     reduced = " (на большой выборке число повторов уменьшено ради скорости)" if n_boot < 500 else ""
     lim = (method_note + f"Интервал перцентильный, {int((1 - alpha) * 100)}%, {n_boot} повторов{reduced}. "
-           "Показывает неопределённость из-за конечной выборки, но не из-за смены периода или популяции.")
+           "Показывает неопределённость из-за конечной выборки, но не из-за смены периода или популяции. "
+           "Ширина > 0.1 считается большой — рабочий ориентир: различия меньше этой ширины незначимы.")
     out = []
-    for name in NAMES:
+    for name in names:
         r = raw[name]
         if isinstance(r, MetricNotComputable):
             out.append(MetricResult(f"Доверительный интервал: {name}", None, NOT_COMPUTABLE,

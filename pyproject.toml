@@ -13,6 +13,7 @@ dependencies = [
     "pyarrow",
     "scikit-learn",
     "matplotlib",
+    "plotly",
     "reportlab",
     "fastapi",
     "uvicorn[standard]",

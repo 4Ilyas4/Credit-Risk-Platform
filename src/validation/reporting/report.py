@@ -5,8 +5,9 @@ import base64
 import html
 import math
 
-from src.validation.reporting.charts import charts_for
-from src.validation.result import NOT_COMPUTABLE, OK, WARNING, ValidationReport
+from src.validation.reporting.plots import charts_figures
+from src.validation.result import (NOT_COMPUTABLE, OK, PILLAR_QUALITY, PILLAR_RELIABILITY,
+                                   PILLAR_STABILITY, WARNING, ValidationReport)
 
 STATUS_LABEL = {OK: "норма", WARNING: "внимание", NOT_COMPUTABLE: "не рассчитано"}
 STATUS_COLOR = {OK: "#2e7d32", WARNING: "#e65100", NOT_COMPUTABLE: "#616161"}
@@ -59,9 +60,45 @@ def _png_tag(caption: str, png: bytes) -> str:
     return f"<figure><img alt='{html.escape(caption)}' src='data:image/png;base64,{b64}'><figcaption>{html.escape(caption)}</figcaption></figure>"
 
 
+def summarize(report: ValidationReport) -> dict:
+    """Сводка по трём вопросам: качество, стабильность, надёжность.
+
+    Возвращает:
+      cards: {quality: {status, n_metrics, n_warning, n_not_computable}, stability: ..., reliability: ...}
+        status карточки — худший статус внутри (not_computable > warning > ok);
+        если в карточке нет ни одной метрики, status="not_computable" (не проверено).
+      attention: список предупреждений (warning) с пояснением.
+      not_checked: список метрик, которые не удалось рассчитать (not_computable).
+    """
+    data = report.to_dict()
+    sections = data.get("sections", {})
+    cards: dict[str, dict] = {}
+    for pillar in (PILLAR_QUALITY, PILLAR_STABILITY, PILLAR_RELIABILITY):
+        items = [r for sec in sections.values() for r in sec if r.get("pillar") == pillar]
+        statuses = [i["status"] for i in items]
+        if not items:
+            status = NOT_COMPUTABLE  # не проверено: в карточке нет ни одной метрики
+        elif "not_computable" in statuses:
+            status = NOT_COMPUTABLE
+        elif "warning" in statuses:
+            status = WARNING
+        else:
+            status = OK
+        cards[pillar] = {
+            "status": status,
+            "n_metrics": len(items),
+            "n_warning": statuses.count(WARNING),
+            "n_not_computable": statuses.count(NOT_COMPUTABLE),
+        }
+    attention = [w for w in data.get("warnings", []) if "не рассчитана" not in w]
+    not_checked = [w for w in data.get("warnings", []) if "не рассчитана" in w]
+    skipped = data.get("meta", {}).get("skipped_checks")
+    if skipped:
+        not_checked.append(f"[Пропущено] {skipped}")
+    return {"cards": cards, "attention": attention, "not_checked": not_checked}
 def render_html(report: ValidationReport, title: str = "Отчёт о валидации кредитной модели") -> str:
     data = report.to_dict()
-    charts = charts_for(report)
+    charts = charts_figures(report)
     parts = [f"<!doctype html><html lang='ru'><head><meta charset='utf-8'><title>{html.escape(title)}</title>"
              f"<style>{CSS}</style></head><body><h1>{html.escape(title)}</h1>"]
     meta = data["meta"]
@@ -75,10 +112,17 @@ def render_html(report: ValidationReport, title: str = "Отчёт о валид
         parts.append("<ul class='warn'>" + "".join(f"<li>{html.escape(w)}</li>" for w in data["warnings"]) + "</ul>")
     else:
         parts.append("<p>Предупреждений нет. Это не гарантия качества: см. ограничения каждого результата.</p>")
+    plotly_inlined = False
     for section, items in data["sections"].items():
         parts.append(f"<h2>{html.escape(section)}</h2>")
-        if section in charts:
-            parts.append("<div class='charts'>" + "".join(_png_tag(c, p) for c, p in charts[section]) + "</div>")
+        figs = charts.get(section)
+        if figs:
+            divs = []
+            for caption, fig in figs:
+                html_fig = fig.to_html(full_html=False, include_plotlyjs=not plotly_inlined)
+                plotly_inlined = True
+                divs.append(f"<figcaption>{html.escape(caption)}</figcaption>{html_fig}")
+            parts.append("<div class='charts'>" + "".join(divs) + "</div>")
         parts.extend(_card(r) for r in items)
     parts.append("</body></html>")
     return "".join(parts)

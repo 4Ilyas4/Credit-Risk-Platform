@@ -79,6 +79,15 @@ def create_app(settings: Settings | None = None, inline_jobs: bool = False) -> F
         ident = storage.save_dataset(df, meta)
         return {**meta, "dataset_id": ident}
 
+    @app.post("/datasets/demo", response_model=DatasetInfo)
+    def demo_dataset_upload():
+        """Демо-набор для кнопки «Демо» в интерфейсе: синтетические результаты скоринга."""
+        from src.api.demo import demo_dataset
+        meta, df = demo_dataset(settings)
+        meta["created_at"] = now_iso()
+        ident = storage.save_dataset(df, meta)
+        return {**meta, "dataset_id": ident}
+
     @app.get("/datasets/{dataset_id}", response_model=DatasetInfo)
     def get_dataset(dataset_id: str):
         return storage.dataset_meta(dataset_id)

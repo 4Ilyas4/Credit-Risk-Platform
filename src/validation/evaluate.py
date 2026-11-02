@@ -29,14 +29,19 @@ def _split_reference(reference_data, y, s, dates, X):
 
 def evaluate_predictions(y_true, y_score, X: pd.DataFrame | None = None, dates=None, groups=None,
                          reference_data: pd.DataFrame | None = None, threshold: float | None = None,
-                         n_boot: int | None = None, seed: int = 42) -> ValidationReport:
+                         n_boot: int | None = None, seed: int = 42,
+                         score_kind: str = "probability", higher_is_riskier: bool = True) -> ValidationReport:
     """Оценивает готовые предсказания. Необязательные входы включают дополнительные проверки:
 
     X - анализ признаков в ошибках и PSI признаков (при reference_data); dates - backtesting по периодам;
     groups - групповой bootstrap и ошибки по сегментам; reference_data - PSI скора и признаков.
     Если в y_true один класс, ранжирующие метрики возвращают not_computable, а не число.
+
+    score_kind: "probability" (скор в [0, 1]) или "score" (ранговый балл). Для рангового балла
+    Brier, LogLoss и калибровка получают not_computable.
+    higher_is_riskier=False: скор инвертируется, чтобы большее значение означало больший риск.
     """
-    prep = prepare_inputs(y_true, y_score)
+    prep = prepare_inputs(y_true, y_score, score_kind=score_kind, higher_is_riskier=higher_is_riskier)
     y, s, mask = prep.y, prep.s, prep.mask
     report = ValidationReport(meta=dict(prep.info), artifacts={"y": y, "s": s})
     if prep.info["n_dropped_missing"]:
@@ -49,10 +54,10 @@ def evaluate_predictions(y_true, y_score, X: pd.DataFrame | None = None, dates=N
     gv = None if groups is None else align_optional(groups, mask, "groups").to_numpy()
 
     report.add("Model Performance", ranking_results(y, s))
-    report.add("Model Performance", probability_results(y, s))
-    report.add("Model Performance", threshold_results(y, s, threshold))
-    report.add("Calibration", calibration_results(y, s))
-    report.add("Reliability", ci_results(y, s, n_boot=n_boot, seed=seed, groups=gv))
+    report.add("Model Performance", probability_results(y, s, score_kind))
+    report.add("Model Performance", threshold_results(y, s, threshold, score_kind))
+    report.add("Calibration", calibration_results(y, s, score_kind=score_kind))
+    report.add("Reliability", ci_results(y, s, n_boot=n_boot, seed=seed, groups=gv, score_kind=score_kind))
 
     skipped = []
     if dv is not None:

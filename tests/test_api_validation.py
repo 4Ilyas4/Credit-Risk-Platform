@@ -89,3 +89,12 @@ def test_reference_dataset_without_score_column_is_422(client, dataset):
     other = upload(client, csv_bytes(pd.DataFrame({"x": range(50)}))).json()
     r = start_run(client, dataset, reference={"dataset_id": other["dataset_id"]})
     assert r.status_code == 422 and "нет столбца скора" in r.json()["error"]
+
+
+def test_missing_score_suggests_numeric_columns(client, dataset):
+    """Столбец скора не найден: понятная ошибка с подсказкой числовых кандидатов, а не падение."""
+    m = {**BASE_MAPPING, "y_score": "nope"}
+    r = start_run(client, dataset, m)
+    assert r.status_code == 422
+    err = r.json()["error"]
+    assert "не найден" in err and "score" in err

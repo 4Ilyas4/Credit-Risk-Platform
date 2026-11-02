@@ -13,14 +13,18 @@ log = logging.getLogger("validator.api")
 
 
 def summarize(report) -> dict:
-    """Короткая сводка для списка запусков и интерфейса."""
+    """Короткая сводка для списка запусков и интерфейса: карточки + ключевые значения."""
+    from src.validation.reporting.report import summarize as summarize_cards
+    cards_summary = summarize_cards(report)
+
     def val(section, name):
         try:
             return report.get(section, name).value
         except KeyError:
             return None
     statuses = [r.status for items in report.sections.values() for r in items]
-    return {"auc": val("Model Performance", "ROC-AUC"), "gini": val("Model Performance", "Gini"),
+    return {**cards_summary,
+            "auc": val("Model Performance", "ROC-AUC"), "gini": val("Model Performance", "Gini"),
             "ks": val("Model Performance", "KS"), "brier": val("Model Performance", "Brier Score"),
             "n_used": report.meta.get("n_used"), "default_rate": report.meta.get("default_rate"),
             "n_warnings": len(report.warnings), "n_not_computable": statuses.count("not_computable"),
@@ -36,7 +40,8 @@ def run_job(storage: Storage, run_id: str, inputs: RunInputs, options: dict) -> 
         report = run_full_validation(
             inputs.y_true, inputs.y_score, X=inputs.X, dates=inputs.dates, groups=inputs.groups,
             reference_data=inputs.reference_data, threshold=options.get("threshold"),
-            n_boot=options.get("n_boot"), seed=options.get("seed", 42))
+            n_boot=options.get("n_boot"), seed=options.get("seed", 42),
+            score_kind=inputs.score_kind, higher_is_riskier=inputs.higher_is_riskier)
         timings["validation_seconds"] = round(time.perf_counter() - t0, 3)
         for note in inputs.notes:
             report.meta.setdefault("notes", []).append(note)
@@ -54,6 +59,11 @@ def run_job(storage: Storage, run_id: str, inputs: RunInputs, options: dict) -> 
                 report.warnings.append("PDF-отчёт не создан: в системе нет шрифта с кириллицей. Доступен HTML.")
         timings["report_seconds"] = round(time.perf_counter() - t1, 3)
         result = report.to_dict()
+        try:
+            from src.validation.reporting.plots import charts_payload
+            result["charts"] = charts_payload(report)
+        except Exception:
+            result["charts"] = {}  # графики не должны ломать запуск
         storage.save_result(run_id, result)
         storage.update_run(run_id, status="completed", finished_at=now_iso(), timings=timings,
                            summary=summarize(report), report_formats=formats)

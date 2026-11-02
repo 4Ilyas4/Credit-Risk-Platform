@@ -1,4 +1,7 @@
-"""Streamlit-интерфейс к API валидатора кредитных моделей.
+"""Streamlit-интерфейс: два экрана «Данные» и «Отчёт».
+
+Тонкая оболочка над API: вся логика на бэкенде. Путь новичка:
+файл (или «Демо») → подтверждение столбцов → вердикт. Без вопросов о seed и периодах.
 
 Запуск:
     streamlit run frontend/app.py
@@ -7,206 +10,210 @@
 from __future__ import annotations
 
 import hashlib
-import io
 import os
 import time
 
-import pandas as pd
+import plotly.io as pio
 import requests
 import streamlit as st
 
 API = os.getenv("API_URL", "http://localhost:8000")
 
+STATUS_COLOR = {"ok": "#2e7d32", "warning": "#e65100", "not_computable": "#616161"}
+STATUS_LABEL = {"ok": "норма", "warning": "внимание", "not_computable": "не проверено"}
+
 try:
-    from src.api.aliases import suggest_mapping, describe, PRESETS
+    from src.api.aliases import describe, suggest_mapping
 except Exception:
+    describe = lambda x: x  # noqa: E731
     suggest_mapping = None
-    describe = lambda x: x
-    PRESETS = {}
 
 st.set_page_config(page_title="Credit Scoring Model Validator", layout="wide")
 st.title("Credit Scoring Model Validator")
-st.caption("Исследовательский инструмент. Не система одобрения кредитов.")
+st.caption("Исследовательский инструмент: проверка качества, стабильности и надёжности. Не система одобрения кредитов.")
 
 
 def api(method, path, **kw):
-    r = requests.request(method, f"{API}{path}", **kw, timeout=60)
-    if not r.ok:
-        st.error(f"{r.status_code}: {r.text}")
+    try:
+        r = requests.request(method, f"{API}{path}", **kw, timeout=120)
+    except requests.ConnectionError:
+        st.error(f"API недоступен по адресу {API}. Запустите бэкенд (uvicorn src.api.app:app).")
         return None
-    return r.json() if r.content else None
+    if not r.ok:
+        st.error(f"{r.status_code}: {r.json().get('error', r.text)}")
+        return None
+    return r.json()
 
 
-# ---------- сайдбар: состояние ----------
-with st.sidebar:
-    st.header("Состояние")
-    if st.button("Сбросить всё и начать заново", type="secondary"):
-        for k in ("dataset", "run", "uploaded_name", "uploaded_hash", "mapping", "result"):
-            st.session_state.pop(k, None)
-        st.rerun()
-    ds_sb = st.session_state.get("dataset")
-    if ds_sb:
-        st.write("Активный датасет:")
-        st.code(ds_sb["dataset_id"])
-        st.write("Файл:", st.session_state.get("uploaded_name", "—"))
+tab_data, tab_report = st.tabs(["Данные", "Отчёт"])
 
-# ---------- 1. Загрузка ----------
-st.header("1. Загрузка данных")
-file = st.file_uploader("CSV или Parquet", type=["csv", "parquet"])
-if file is not None:
-    content = file.getvalue()
-    h = hashlib.md5(content).hexdigest()
-    if st.session_state.get("uploaded_hash") != h:
-        for k in ("dataset", "run", "mapping", "result"):
-            st.session_state.pop(k, None)
-        st.session_state["uploaded_name"] = file.name
-        st.session_state["uploaded_hash"] = h
-        resp = requests.post(f"{API}/datasets", files={"file": (file.name, content, "text/csv")}, timeout=120)
-        if resp.ok:
-            st.session_state["dataset"] = resp.json()
-            st.success(f"Загружен: {resp.json()['dataset_id']}")
-        else:
-            st.error(resp.text)
+
+with tab_data:
+    st.header("Данные")
+    c1, c2 = st.columns([4, 1])
+    file = c1.file_uploader("CSV или Parquet", type=["csv", "parquet"], label_visibility="collapsed")
+    if c2.button("Демо", help="Загрузить синтетические результаты скоринга"):
+        ds = api("POST", "/datasets/demo")
+        if ds:
+            st.session_state["dataset"] = ds
+            st.session_state["dataset_name"] = "Демо-набор"
+            for k in ("run_id", "result", "summary", "uploaded_hash", "map_ds"):
+                st.session_state.pop(k, None)
+            st.rerun()
+
+    if file is not None:
+        content = file.getvalue()
+        h = hashlib.md5(content).hexdigest()
+        if st.session_state.get("uploaded_hash") != h:
+            for k in ("dataset", "run_id", "result", "summary", "dataset_name", "map_ds"):
+                st.session_state.pop(k, None)
+            st.session_state["uploaded_hash"] = h
+            resp = requests.post(f"{API}/datasets", files={"file": (file.name, content, "text/csv")}, timeout=120)
+            if resp.ok:
+                st.session_state["dataset"] = resp.json()
+                st.session_state["dataset_name"] = file.name
+                st.rerun()
+            else:
+                st.error(resp.json().get("error", resp.text))
+
 
 ds = st.session_state.get("dataset")
 if ds:
-    st.write("Столбцы:", pd.DataFrame(ds["columns"]))
-    st.info("Требования: y_true — 0/1 (числовой); y_score — вероятность в [0,1]. "
-            "Признаки не должны совпадать со скором/таргетом.")
+    st.write(f"**{st.session_state.get('dataset_name', '')}** — {ds['n_rows']} строк × {ds['n_columns']} столбцов")
+    sm = ds.get("suggested_mapping", {})
+    found = [f"{label}={sm.get(role) or '—'}" for role, label in
+             (("y_true", "исход"), ("y_score", "скор"), ("date", "дата"), ("group", "группа"))]
+    st.success("Найдены столбцы: " + ", ".join(found))
+    for q in ds.get("mapping_questions", []):
+        st.warning(q["question"])
 
-    st.subheader("Авто-подготовка (опционально)")
-    auto = st.checkbox("Авто-подготовка: бинаризовать цель и нормализовать скор", value=False)
-    df_preview = pd.read_csv(io.BytesIO(content)) if "content" in locals() else None
-
-
-# ---------- 2. Сопоставление ----------
-if ds:
-    st.header("2. Сопоставление столбцов")
     cols = [c["name"] for c in ds["columns"]]
-    labels = [f"{c} — {describe(c)}" for c in cols]
-    if suggest_mapping:
-        sug = suggest_mapping(cols)
-    else:
-        sug = {}
-    preset = st.selectbox("Пресет датасета (опц.)", ["Свой"] + list(PRESETS.keys()))
-    if preset != "Свой" and PRESETS.get(preset):
-        for k, v in PRESETS[preset].items():
-            if v and v in cols:
-                sug[k] = v
 
-    def idx(colname):
-        return cols.index(colname) if colname in cols else 0
+    def _idx(colname, default=0):
+        return cols.index(colname) if colname in cols else default
 
-    y_true = st.selectbox("y_true (целевая)", cols, index=idx(sug.get("y_true")), format_func=describe)
-    y_score = st.selectbox("y_score (скор)", cols, index=idx(sug.get("y_score")), format_func=describe)
-    date_col = st.selectbox("date (опц.)", ["—"] + cols, index=0 if sug.get("date") is None else cols.index(sug["date"]) + 1, format_func=lambda x: "—" if x == "—" else describe(x))
-    group_col = st.selectbox("group (опц.)", ["—"] + cols, index=0 if sug.get("group") is None else cols.index(sug["group"]) + 1, format_func=lambda x: "—" if x == "—" else describe(x))
-    feat_cols = st.multiselect("features (опц.)", cols, format_func=describe)
+    # инициализация сопоставления из подсказки (один раз на датасет)
+    sid = ds["dataset_id"]
+    if st.session_state.get("map_ds") != sid:
+        st.session_state["map_ds"] = sid
+        st.session_state["m_y_true"] = sm.get("y_true") or (cols[0] if cols else "")
+        st.session_state["m_y_score"] = sm.get("y_score") or (cols[1] if len(cols) > 1 else cols[0])
+        st.session_state["m_date"] = sm.get("date") or ""
+        st.session_state["m_group"] = sm.get("group") or ""
+        st.session_state["m_feats"] = [c for c in cols
+                                       if c not in (sm.get("y_true"), sm.get("y_score"), "issue_d")][:4]
 
-    mapping = {"y_true": y_true, "y_score": y_score}
-    if date_col != "—":
-        mapping["date"] = date_col
-    if group_col != "—":
-        mapping["group"] = group_col
-    if feat_cols:
-        mapping["features"] = feat_cols
+    with st.expander("Сопоставление столбцов (изменить при ошибке)"):
+        st.session_state["m_y_true"] = st.selectbox(
+            "y_true (исход)", cols, index=_idx(st.session_state["m_y_true"]), format_func=describe)
+        st.session_state["m_y_score"] = st.selectbox(
+            "y_score (скор)", cols, index=_idx(st.session_state["m_y_score"]), format_func=describe)
+        st.session_state["score_kind"] = st.radio(
+            "Тип скора", ["probability", "score"], horizontal=True,
+            help="score — ранговый балл (int_rate, grade): Brier/LogLoss/калибровка не считаются")
+        st.session_state["higher_is_riskier"] = st.checkbox("Больше значение = выше риск", value=True)
+        dv = st.text_input("default_value (опц.)", value=st.session_state.get("m_dv", ""),
+                           help="Значение в y_true = дефолт, например 'Charged Off'")
+        st.session_state["m_dv"] = dv
+        st.session_state["m_date"] = st.selectbox(
+            "date (опц.)", [""] + cols, index=_idx(st.session_state["m_date"], 0),
+            format_func=lambda x: "—" if x == "" else describe(x))
+        st.session_state["m_group"] = st.selectbox(
+            "group (опц.)", [""] + cols, index=_idx(st.session_state["m_group"], 0),
+            format_func=lambda x: "—" if x == "" else describe(x))
+        st.session_state["m_feats"] = st.multiselect(
+            "features (опц.)", cols, default=st.session_state.get("m_feats", []), format_func=describe)
 
-    # ---------- 3. Параметры ----------
-    st.header("3. Параметры анализа")
-    c1, c2 = st.columns(2)
-    n_boot = c1.number_input("n_boot", 10, 2000, 200)
-    seed = c2.number_input("seed", 0, 10_000, 42)
-    ref_mode = st.radio("Референс", ["нет", "по периоду", "другой датасет"], horizontal=True)
-    reference = {}
-    current_period = {}
-    if ref_mode == "по периоду" and "date" in mapping:
-        current_period = {"start": st.text_input("current start", "2014-07-01")}
-        reference = {"period": {"end": st.text_input("reference end", "2014-06-30")}}
-    elif ref_mode == "другой датасет":
-        ref_id = st.text_input("reference dataset_id")
-        if ref_id:
-            reference = {"dataset_id": ref_id}
+    mapping = {"y_true": st.session_state["m_y_true"], "y_score": st.session_state["m_y_score"],
+               "score_kind": st.session_state.get("score_kind", "probability"),
+               "higher_is_riskier": st.session_state.get("higher_is_riskier", True)}
+    if st.session_state.get("m_dv"):
+        mapping["default_value"] = st.session_state["m_dv"]
+    if st.session_state.get("m_date"):
+        mapping["date"] = st.session_state["m_date"]
+    if st.session_state.get("m_group"):
+        mapping["group"] = st.session_state["m_group"]
+    if st.session_state.get("m_feats"):
+        mapping["features"] = st.session_state["m_feats"]
 
+    st.caption("Сервер сам выберет референс (ранние 70% по дате), число bootstrap-повторов и seed.")
     if st.button("Запустить проверку", type="primary"):
-        ok = True
-        if df_preview is not None:
-            if auto:
-                # бинаризация цели
-                if y_true in df_preview.columns:
-                    vals = set(pd.unique(df_preview[y_true].dropna()))
-                    if not vals.issubset({0, 1, 0.0, 1.0, True, False}):
-                        default_statuses = [v for v in vals if str(v).lower() in {"charged off", "default", "bad", "1"}]
-                        if default_statuses:
-                            df_preview["default"] = df_preview[y_true].isin(default_statuses).astype(int)
-                        else:
-                            st.warning(f"Выбранная колонка '{y_true}' не похожа на цель (нет значений Charged Off/Default). Выберите колонку со статусом кредита.")
-                # нормализация скорa
-                if y_score in df_preview.columns:
-                    s = pd.to_numeric(df_preview[y_score], errors="coerce")
-                    if not (s.min() >= 0 and s.max() <= 1):
-                        if s.max() <= 100:
-                            df_preview["score"] = (s / 100).clip(0.001, 0.999)
-                        else:
-                            st.warning(f"Скор '{y_score}' вне [0,1] и не похож на проценты. Преобразуйте вручную или выберите другую колонку.")
-            if y_true in df_preview.columns:
-                vals = set(pd.unique(df_preview[y_true].dropna()))
-                if not vals.issubset({0, 1, 0.0, 1.0, True, False}):
-                    st.error(f"Столбец '{y_true}' должен содержать только 0 и 1. Вы выбрали колонку, которая не является целью. Выберите колонку со статусом кредита (например loan_status → default).")
-                    ok = False
-            if y_score in df_preview.columns:
-                s = pd.to_numeric(df_preview[y_score], errors="coerce")
-                if s.isna().all() or s.min() < 0 or s.max() > 1:
-                    st.error(f"Столбец '{y_score}' должен быть числовым и в [0,1]. Вы выбрали не скор. Выберите колонку с вероятностью (или score/int_rate).")
-                    ok = False
-        if ok:
-            if auto and df_preview is not None:
-                buf = io.StringIO()
-                df_preview.to_csv(buf, index=False)
-                resp = requests.post(f"{API}/datasets", files={"file": ("prepared.csv", buf.getvalue().encode(), "text/csv")}, timeout=120)
-                if not resp.ok:
-                    st.error(resp.text)
-                    st.stop()
-                dataset_id = resp.json()["dataset_id"]
-            else:
-                dataset_id = ds["dataset_id"]
+        body = {"dataset_id": ds["dataset_id"], "mapping": mapping}
+        r = requests.post(f"{API}/validation-runs", json=body, timeout=60)
+        if r.ok:
+            st.session_state["run_id"] = r.json()["run_id"]
+            st.session_state.pop("result", None)
+            st.session_state.pop("summary", None)
+            st.success("Задача создана. Смотрите экран «Отчёт».")
+            st.rerun()
+        else:
+            st.error(r.json().get("error", r.text))
 
-            body = {"dataset_id": dataset_id, "mapping": mapping,
-                    "options": {"n_boot": int(n_boot), "seed": int(seed)}}
-            if reference:
-                body["reference"] = reference
-            if current_period:
-                body["current_period"] = current_period
-            r = requests.post(f"{API}/validation-runs", json=body, timeout=60)
-            if r.ok:
-                st.session_state["run"] = r.json()
-                st.success("Задача создана")
-            else:
-                st.error(r.text)
 
-# ---------- 4. Статус ----------
-run = st.session_state.get("run")
-if run:
-    st.header("4. Результат")
-    rid = run["run_id"]
-    placeholder = st.empty()
-    while True:
-        d = requests.get(f"{API}/validation-runs/{rid}", timeout=60).json()
-        placeholder.write(f"Статус: **{d['status']}**")
-        if d["status"] in ("completed", "failed"):
-            break
-        time.sleep(1)
-    if d["status"] == "failed":
-        st.error(d["error"])
+with tab_report:
+    run_id = st.session_state.get("run_id")
+    if not run_id:
+        st.info("Загрузите данные (или нажмите «Демо») и запустите проверку на экране «Данные».")
     else:
-        st.subheader("Сводка")
-        st.json(d["summary"])
-        st.subheader("Метрики")
-        for section, items in d["result"]["sections"].items():
-            with st.expander(section, expanded=True):
-                st.dataframe(pd.DataFrame(items))
-        if d["result"].get("warnings"):
-            st.warning("\n".join(d["result"]["warnings"]))
-        st.subheader("Скачать отчёт")
+        d = api("GET", f"/validation-runs/{run_id}")
+        if d is None:
+            st.stop()
+        with st.spinner("Проверка выполняется..."):
+            while d["status"] in ("queued", "running"):
+                time.sleep(1)
+                d = api("GET", f"/validation-runs/{run_id}")
+                if d is None:
+                    st.stop()
+        if d["status"] == "failed":
+            st.error(d.get("error", "Проверка завершилась ошибкой."))
+            st.stop()
+        cards = (d.get("summary") or {}).get("cards", {})
+
+        card_cols = st.columns(3)
+        for col, (pillar, label) in zip(card_cols, [
+                ("quality", "Качество"), ("stability", "Стабильность"),
+                ("reliability", "Надёжность")]):
+            card = cards.get(pillar, {})
+            status = card.get("status", "not_computable")
+            color = STATUS_COLOR.get(status, "#616161")
+            col.markdown(
+                f"<div style='border:1px solid #ddd;border-left:6px solid {color};"
+                f"border-radius:4px;padding:10px 14px'><b>{label}</b><br>"
+                f"<span style='color:{color};font-weight:600'>{STATUS_LABEL.get(status, status)}</span>"
+                f"<br><small>{card.get('n_warning', 0)}⚠️ {card.get('n_not_computable', 0)}❔ / "
+                f"{card.get('n_metrics', 0)} метрик</small></div>",
+                unsafe_allow_html=True)
+
+        st.subheader("Требует внимания")
+        att = (d.get("summary") or {}).get("attention", [])
+        st.markdown("\n".join(f"- {a}" for a in att) if att else "Предупреждений нет.")
+
+        st.subheader("Не проверено")
+        nc = (d.get("summary") or {}).get("not_checked", [])
+        st.markdown("\n".join(f"- {n}" for n in nc) if nc else "Все применимые проверки выполнены.")
+
+        charts = d.get("result", {}).get("charts", {})
+        if charts:
+            st.subheader("Графики")
+            for section, items in charts.items():
+                with st.expander(f"Графики: {section}", expanded=True):
+                    cols2 = st.columns(2)
+                    for i, item in enumerate(items):
+                        try:
+                            fig = pio.from_json(item["fig_json"])
+                            (cols2[i % 2] if len(items) > 1 else st).plotly_chart(fig, use_container_width=True)
+                        except Exception:
+                            st.write(item["caption"])
+
+        st.subheader("Полный отчёт")
+        try:
+            html = requests.get(f"{API}/reports/{run_id}?format=html", timeout=60)
+            if html.ok:
+                st.components.v1.html(html.text, height=500, scrolling=True)
+        except requests.ConnectionError:
+            st.warning("HTML-отчёт недоступен.")
+        st.markdown("**Скачать:**")
         for fmt in ("html", "pdf", "json"):
-            url = f"{API}/reports/{rid}?format={fmt}"
-            st.markdown(f"[{fmt.upper()}]({url})")
+            content = requests.get(f"{API}/reports/{run_id}?format={fmt}", timeout=120).content
+            st.download_button(f"Отчёт {fmt.upper()}", data=content,
+                               file_name=f"validation_report_{run_id[:8]}.{fmt}", key=f"dl_{fmt}")
