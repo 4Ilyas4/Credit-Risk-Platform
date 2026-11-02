@@ -31,6 +31,12 @@ tracking = ["mlflow"]
 [tool.setuptools.packages.find]
 include = ["src*"]
 
+[tool.poetry]
+# Streamlit Cloud собирает pyproject через Poetry. Он не понимает
+# [tool.setuptools.packages.find] и не находит пакет по имени проекта в src-layout.
+# Явно указываем, что устанавливаемый пакет — это каталог src (импорты `from src...`).
+packages = [{ include = "src" }]
+
 [tool.pytest.ini_options]
 pythonpath = [".", "tests"]
 testpaths = ["tests"]
