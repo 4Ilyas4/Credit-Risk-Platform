@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "credit-scoring-model-validator"
 version = "0.1.0"
 description = "Research platform for independent validation of credit scoring models"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "pandas",
     "numpy",
@@ -14,7 +14,6 @@ dependencies = [
     "scikit-learn",
     "matplotlib",
     "plotly",
-    "reportlab>=4.0",  # 3.5.x не собирает C-расширение на Python 3.13/3.14 (Streamlit Cloud)
     "fastapi",
     "uvicorn[standard]",
     "python-multipart",
@@ -23,7 +22,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+# reportlab нужен только для PDF-экспорта; на Python 3.14 облако не может собрать его
+# C-расширение, поэтому он не входит в обязательные зависимости. PDF мягко отключается,
+# а HTML/JSON-отчёты работают всегда.
+dev = ["pytest", "reportlab>=4.0"]
+pdf = ["reportlab>=4.0"]
 tracking = ["mlflow"]
 
 [tool.setuptools.packages.find]

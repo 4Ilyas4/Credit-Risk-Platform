@@ -52,11 +52,11 @@ def run_job(storage: Storage, run_id: str, inputs: RunInputs, options: dict) -> 
             try:
                 report.save(str(storage.report_path(run_id, fmt)))
                 formats.append(fmt)
-            except Exception as exc:  # PDF зависит от шрифта в системе: его отсутствие не должно ломать запуск
+            except Exception as exc:  # PDF опционален: reportlab или шрифты могут отсутствовать
                 if fmt != "pdf":
                     raise
                 log.warning("PDF не создан для %s: %s", run_id, type(exc).__name__)
-                report.warnings.append("PDF-отчёт не создан: в системе нет шрифта с кириллицей. Доступен HTML.")
+                report.warnings.append("PDF-отчёт не создан: reportlab или кириллический шрифт недоступны. Доступен HTML/JSON.")
         timings["report_seconds"] = round(time.perf_counter() - t1, 3)
         result = report.to_dict()
         try:

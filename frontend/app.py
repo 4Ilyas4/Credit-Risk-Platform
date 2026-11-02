@@ -230,8 +230,9 @@ else:
                 st.components.v1.html(html.text, height=500, scrolling=True)
         except requests.ConnectionError:
             st.warning("HTML-отчёт недоступен.")
-        st.markdown("**Скачать:**")
-        for fmt in ("html", "pdf", "json"):
+        fmt_btn = st.columns(3)
+        for i, fmt in enumerate(d.get("report_formats", ["html"])):
             content = requests.get(f"{API}/reports/{run_id}?format={fmt}", timeout=120).content
-            st.download_button(f"Отчёт {fmt.upper()}", data=content,
-                               file_name=f"validation_report_{run_id[:8]}.{fmt}", key=f"dl_{fmt}")
+            fmt_btn[i].download_button(f"Отчёт {fmt.upper()}", data=content,
+                                       file_name=f"validation_report_{run_id[:8]}.{fmt}",
+                                       key=f"dl_{fmt}", use_container_width=True)
