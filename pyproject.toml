@@ -12,6 +12,8 @@ dependencies = [
     "numpy",
     "pyarrow",
     "scikit-learn",
+    "matplotlib",
+    "reportlab",
 ]
 
 [project.optional-dependencies]
