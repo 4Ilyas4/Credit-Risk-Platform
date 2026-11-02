@@ -15,7 +15,7 @@ dependencies = [
     "matplotlib",
     "plotly",
     "fastapi",
-    "uvicorn[standard]",
+    "uvicorn",  # без [standard]: uvloop/httptools/watchfiles часто не имеют колес под Python 3.14
     "python-multipart",
     "streamlit",
     "httpx",
