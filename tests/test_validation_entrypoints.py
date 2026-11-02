@@ -118,14 +118,20 @@ def test_save_html_pdf_json(tmp_path):
     y, s, X, dates = _data()
     r = run_full_validation(y, s, X=X, dates=dates, n_boot=30)
     html = r.save(str(tmp_path / "r.html"))
-    pdf = r.save(str(tmp_path / "r.pdf"))
     js = r.save(str(tmp_path / "r.json"))
     text = open(html, encoding="utf-8").read()
-    assert "ROC-AUC" in text and "Ограничения" in text and "data:image/png;base64" in text
-    assert open(pdf, "rb").read(4) == b"%PDF"
+    assert "ROC-AUC" in text and "Ограничения" in text and "plotly" in text.lower()
     assert json.loads(open(js, encoding="utf-8").read())["sections"]["Model Performance"]
     with pytest.raises(ValueError):
         r.save(str(tmp_path / "r.docx"))
+
+
+def test_save_pdf_when_reportlab_available(tmp_path):
+    pytest.importorskip("reportlab")  # PDF опционален и не входит в базовые зависимости
+    y, s, X, dates = _data()
+    r = run_full_validation(y, s, X=X, dates=dates, n_boot=30)
+    pdf = r.save(str(tmp_path / "r.pdf"))
+    assert open(pdf, "rb").read(4) == b"%PDF"
 
 
 def test_html_escapes_untrusted_text(tmp_path):
@@ -139,4 +145,3 @@ def test_report_for_one_class_data_still_renders(tmp_path):
     r = evaluate_predictions(np.zeros(400), np.linspace(0.05, 0.95, 400), n_boot=30)
     text = open(r.save(str(tmp_path / "one.html")), encoding="utf-8").read()
     assert "не рассчитано" in text
-    r.save(str(tmp_path / "one.pdf"))

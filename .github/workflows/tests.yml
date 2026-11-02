@@ -10,6 +10,9 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -e ".[dev]"
+      # PDF-модуль опционален (на Python 3.14 облако не может собрать reportlab);
+      # в CI на Python 3.11 он ставится, чтобы тесты PDF-экспорта не пропускались.
+      - run: pip install "reportlab>=4.0"
       # Шаг 1: синтетика с заложенными дефектами — главный аргумент
       - name: "Синтетика: дефекты -> ожидаемые статусы"
         run: python -m pytest tests/test_validation_synthetic.py tests/test_validation_logic.py tests/test_validation_summary.py -q

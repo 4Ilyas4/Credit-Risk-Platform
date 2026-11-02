@@ -22,11 +22,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# reportlab нужен только для PDF-экспорта; на Python 3.14 облако не может собрать его
-# C-расширение, поэтому он не входит в обязательные зависимости. PDF мягко отключается,
-# а HTML/JSON-отчёты работают всегда.
-dev = ["pytest", "reportlab>=4.0"]
-pdf = ["reportlab>=4.0"]
+# reportlab НЕ указываем здесь вообще: Poetry на Streamlit Cloud резолвит его даже как
+# опциональный и падает на Python 3.14. PDF-экспорт работает там, где reportlab уже
+# установлен отдельно (локально/CI); в облаке PDF мягко отключается.
+dev = ["pytest"]
 tracking = ["mlflow"]
 
 [tool.setuptools.packages.find]
