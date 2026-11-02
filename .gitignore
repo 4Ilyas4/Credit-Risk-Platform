@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.egg-info/
+data/raw/*
+data/processed/*
+!data/README.md
+mlruns/
+experiments/mlflow.db
+experiments/mlartifacts/

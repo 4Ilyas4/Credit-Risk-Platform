@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "credit-scoring-model-validator"
+version = "0.1.0"
+description = "Research platform for independent validation of credit scoring models"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas",
+    "numpy",
+    "pyarrow",
+    "scikit-learn",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+tracking = ["mlflow"]
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
