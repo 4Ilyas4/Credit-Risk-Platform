@@ -19,11 +19,12 @@ _GREY = "#9e9e9e"
 
 def _layout(title: str, xlabel: str, ylabel: str, height: int = 380) -> go.Layout:
     return go.Layout(
-        title=title, xaxis={"title": xlabel, "gridcolor": "#eee"},
+        title={"text": title, "x": 0.02, "xanchor": "left", "y": 0.99, "yanchor": "top"},
+        xaxis={"title": xlabel, "gridcolor": "#eee"},
         yaxis={"title": ylabel, "gridcolor": "#eee"},
-        height=height, margin={"l": 60, "r": 20, "t": 44, "b": 48},
+        height=height, margin={"l": 60, "r": 20, "t": 56, "b": 64},
         paper_bgcolor=_BG, plot_bgcolor=_BG, font={"family": _FONT, "size": 12},
-        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "x": 0})
+        legend={"orientation": "h", "yanchor": "top", "y": -0.18, "x": 0.02})
 
 
 def score_distribution(y: np.ndarray, s: np.ndarray, score_kind: str = "probability") -> go.Figure:

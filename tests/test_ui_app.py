@@ -43,6 +43,7 @@ def api_url(tmp_path_factory):
 
 def test_demo_to_report(api_url, monkeypatch):
     from streamlit.testing.v1 import AppTest
+    import requests
     monkeypatch.setenv("API_URL", api_url)
     at = AppTest.from_file("frontend/app.py")
     at.run(timeout=120)
@@ -53,18 +54,23 @@ def test_demo_to_report(api_url, monkeypatch):
     at.run(timeout=120)
     assert any("Найдены столбцы" in m.value for m in at.success), at.exception
 
-    # 2. запуск проверки (без раскрытия спойлера — используется подсказка)
+    # 2. запуск проверки: подсказка, без раскрытия спойлера → авто-переход на «Отчёт»
     run_btn = next(b for b in at.button if b.label == "Запустить проверку")
     run_btn.click()
     at.run(timeout=120)
     assert at.exception == []
-    assert any("Задача создана" in m.value for m in at.success), [e.value for e in at.error]
 
-    # 3. экран «Отчёт»: передаём датасет и run_id в новое состояние, ждём завершение
-    at2 = AppTest.from_file("frontend/app.py")
-    at2.session_state["dataset"] = at.session_state["dataset"]
-    at2.session_state["run_id"] = at.session_state["run_id"]
-    at2.run(timeout=120)
-    assert at2.exception == []
-    # три карточки отрисованы (метка «Качество» появляется в HTML-маркдауне карточки)
-    assert any("Качество" in m.value for m in at2.markdown), [e.value for e in at2.error]
+    # 3. экран «Отчёт» с тремя карточками (включает ожидание завершения проверки)
+    assert any("Качество" in m.value for m in at.markdown), [e.value for e in at.error]
+
+    # 4. демо-ран использовал даты: проверяются поздние ~30% строк, а не все 3000
+    run_id = at.session_state["run_id"]
+    d = requests.get(f"{api_url}/validation-runs/{run_id}", timeout=60).json()
+    assert d["status"] == "completed", d.get("error")
+    assert 300 < d["summary"]["n_used"] < 1500, d["summary"].get("n_used")
+
+    # 5. переключение обратно на «Данные» не должно падать (была баг: очистка ключей виджетов)
+    at.session_state["view"] = "Данные"
+    at.run(timeout=120)
+    assert at.exception == [], at.exception
+    assert any("Найдены столбцы" in m.value for m in at.success)
