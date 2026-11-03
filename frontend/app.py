@@ -5,7 +5,8 @@
 
 Запуск:
     streamlit run frontend/app.py
-Переменная окружения API_URL задаёт адрес FastAPI (по умолчанию http://localhost:8000).
+Переменная окружения или Streamlit secret API_URL задаёт адрес FastAPI
+(по умолчанию http://localhost:8000).
 """
 from __future__ import annotations
 
@@ -17,7 +18,17 @@ import plotly.io as pio
 import requests
 import streamlit as st
 
-API = os.getenv("API_URL", "http://localhost:8000")
+def _api_url() -> str:
+    value = os.getenv("API_URL")
+    if value is None:
+        try:
+            value = st.secrets.get("API_URL")
+        except FileNotFoundError:
+            value = None
+    return (value or "http://localhost:8000").rstrip("/")
+
+
+API = _api_url()
 
 STATUS_COLOR = {"ok": "#2e7d32", "warning": "#e65100", "not_computable": "#9e9e9e"}
 STATUS_LABEL = {"ok": "норма", "warning": "внимание", "not_computable": "не проверено"}
@@ -37,7 +48,11 @@ def api(method, path, **kw):
     try:
         r = requests.request(method, f"{API}{path}", **kw, timeout=120)
     except requests.ConnectionError:
-        st.error(f"API недоступен по адресу {API}. Запустите бэкенд (uvicorn src.api.app:app).")
+        st.error(
+            f"API недоступен по адресу {API}. Локально запустите "
+            "`uvicorn src.api.app:app`. В Streamlit Cloud разверните FastAPI "
+            "отдельно и задайте его публичный адрес в Secrets как `API_URL`."
+        )
         return None
     if not r.ok:
         st.error(f"{r.status_code}: {r.json().get('error', r.text)}")

@@ -1,6 +1,20 @@
 # Streamlit-интерфейс
 
-Запуск: `streamlit run frontend/app.py` (API_URL по умолчанию http://localhost:8000).
+Запуск: `streamlit run frontend/app.py` (`API_URL` по умолчанию
+`http://localhost:8000`). Адрес можно задать переменной окружения `API_URL`
+или Streamlit secret с таким именем.
+
+Streamlit Community Cloud запускает только интерфейс. Для облачного деплоя
+нужно отдельно развернуть FastAPI на публичном HTTPS-адресе и добавить его в
+настройках приложения Streamlit Cloud → **Secrets**:
+
+```toml
+API_URL = "https://<публичный-адрес-api>"
+```
+
+Этот адрес должен вести к сервису FastAPI, например `https://<адрес-api>/health`
+должен вернуть JSON со статусом `ok`. `localhost` в облаке указывает на
+контейнер Streamlit, а не на компьютер разработчика или отдельный API-сервис.
 
 ## Функции
 - `api(method, path, **kw)` — обёртка над requests.
@@ -26,4 +40,3 @@
 ## Валидация
 - Проверка типа и диапазона до отправки.
 - Понятные сообщения при неверном выборе.
-

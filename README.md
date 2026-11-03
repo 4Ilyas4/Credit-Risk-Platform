@@ -142,8 +142,9 @@ CI (GitHub Actions) запускает синтетику и AppTest отдел�
 Для облачного размещения:
 - **FastAPI** — на Railway/Render (Python 3.11), команда `uvicorn src.api.app:app`.
 - **Streamlit** — на Streamlit Community Cloud, переменная окружения
-  `API_URL=http://<адрес API>`.
+  `API_URL=http://<адрес API>` или secret `API_URL = "https://<публичный адрес API>"`.
+  Streamlit Cloud запускает только UI: API нужно развернуть отдельно; `localhost`
+  внутри облака не указывает на локальный компьютер.
 - `runtime.txt` фиксирует Python 3.11 — без него облако ставит Python 3.14,
   где reportlab 3.5.x не собирает C-расширение. Плюс в `pyproject.toml`
   `reportlab>=4.0` (рабочая версия на новых Pythons).
-
